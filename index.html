@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Big/Small Predictor</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--text:#e6eef8;--muted:#9fb3cf}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    body{background:linear-gradient(180deg,#071025 0%,#041020 100%);color:var(--text);min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;padding:18px}
+    .wrap{width:100%;max-width:980px}
+    header{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    h1{margin:0;font-size:20px}
+    .card{background:rgba(255,255,255,0.03);padding:14px;border-radius:12px;box-shadow:0 6px 24px rgba(2,6,23,0.6)}
+    .predict-row{display:flex;gap:10px;align-items:center;margin-top:10px}
+    input[type=text]{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:var(--text);min-width:140px}
+    button{padding:10px 12px;border-radius:8px;border:none;background:#0ea5a0;color:#012;background:transparent;color:var(--text);cursor:pointer}
+    .result{margin-top:12px;font-weight:700;font-size:18px}
+    .muted{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:1fr 380px;gap:12px;margin-top:12px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left}
+    .controls{display:flex;gap:8px;align-items:center}
+    textarea{width:100%;height:120px;padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--text)}
+    .small{font-size:12px;color:var(--muted)}
+    .tag{display:inline-block;padding:6px 8px;border-radius:8px;font-weight:700}
+    .tag.b{background:rgba(14,165,160,0.12);color:#6ff0e8}
+    .tag.s{background:rgba(99,102,241,0.09);color:#cfc7ff}
+    .actions button{background:transparent;border:1px solid rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px}
+    footer{margin-top:10px;color:var(--muted);font-size:13px}
+    @media(max-width:880px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Big / Small Predictor</h1>
+        <div class="muted">Enter a number (00–99) then tap Predict. Rules shown below; you can add/edit/delete rules and they'll be saved locally.</div>
+      </div>
+      <div style="margin-left:auto" class="small muted">Realtime — no reload</div>
+    </header>
+
+    <div class="card">
+      <div>
+        <div class="predict-row">
+          <input id="numInput" type="text" maxlength="2" placeholder="e.g. 24 or 07" />
+          <button id="predictBtn">Predict</button>
+          <button id="clearBtn">Clear</button>
+          <div style="margin-left:8px" class="small muted">Confidence & nearest rule used shown below</div>
+        </div>
+
+        <div id="result" class="result"></div>
+        <div id="explain" class="small muted"></div>
+      </div>
+
+      <div class="grid">
+        <div>
+          <h3 style="margin-bottom:6px">Rules (all pairs)</h3>
+          <div style="max-height:420px;overflow:auto">
+            <table id="rulesTable"><thead><tr><th>#</th><th>Number</th><th>Label</th><th>Count</th><th>Actions</th></tr></thead><tbody></tbody></table>
+          </div>
+
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <input id="addNum" placeholder="Number (00–99)" />
+            <select id="addLabel"><option value="b">b (big)</option><option value="s">s (small)</option></select>
+            <button id="addBtn">Add / Update</button>
+            <div class="small muted">Add or update a rule. If number exists this increments counts.</div>
+          </div>
+
+          <div style="margin-top:12px">
+            <h4 style="margin:6px 0">Bulk import (paste pairs like: 24 b) — one per line</h4>
+            <textarea id="bulkArea" placeholder="Paste pairs here, e.g.\n24 b\n57 s\n..."></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button id="importBtn">Import</button>
+              <button id="resetBtn">Reset to initial dataset</button>
+              <button id="exportBtn">Export JSON</button>
+              <button id="downloadBtn">Download HTML</button>
+            </div>
+            <div id="bulkMsg" class="small muted" style="margin-top:6px"></div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin-bottom:6px">Add / Edit Rules</h3>
+          <div class="small muted">Select a rule from the table to edit it below. Edits apply instantly.</div>
+          <div style="margin-top:8px">
+            <label class="small">Number</label>
+            <input id="editNum" />
+            <div style="height:8px"></div>
+            <label class="small">Label</label>
+            <select id="editLabel"><option value="b">b</option><option value="s">s</option></select>
+            <div style="height:8px"></div>
+            <label class="small">Count (how many times this pair occurs)</label>
+            <input id="editCount" type="number" min="1" />
+            <div style="height:8px"></div>
+            <div class="controls">
+              <button id="saveEditBtn">Save Edit</button>
+              <button id="deleteBtn">Delete Rule</button>
+            </div>
+            <div style="height:18px"></div>
+            <h4>Prediction logic (simple)</h4>
+            <div class="small muted">1) If exact number exists → majority label (shows confidence = label_count/total_count for that number).<br>2) If not, nearest-number search (by absolute distance). Uses closest rule found and reports which number was used.<br>3) You can add rules to improve predictions; data persists in your browser.</div>
+          </div>
+        </div>
+      </div>
+
+      <footer>Tip: use two digits (e.g. 03). Table is editable and saved in localStorage.</footer>
+    </div>
+  </div>
+
+  <script>
+    // Initial dataset (from user-provided pairs)
+    const initialText = `24 b
+57 s
+25 b
+63 b
+03 b
+29 s
+85 b
+29 s
+40 s
+96 b
+43 b
+67 s
+55 s
+79 b
+36 s
+46 b
+91 b
+39 s
+54 b
+63 b
+40 b
+77 s
+06 s
+16 s
+66 b
+87 b
+79 b
+96 b
+31 s
+13 s
+16 b
+35 s
+33 b
+63 s
+93 s
+00 b
+19 b
+65 s
+36 b
+94 b
+68 b
+05 s
+40 b
+54 b
+42 s
+51 s
+25 b
+96 s
+98 b
+45 b
+55 b
+13 s
+56 s
+70 b
+75 b
+20 s
+73 s
+87 b
+74 b
+61 s
+29 b
+
+15 b
+36 s
+20 s
+70 b
+87 b
+74 b
+61 s
+91 b
+05 b
+48 s
+20 s`;
+
+    // utilities
+    const $ = id => document.getElementById(id);
+
+    function normalizeNum(s){
+      if(s==null) return null;
+      s = String(s).trim();
+      if(!/^-?\d+$/.test(s)) return null;
+      let n = parseInt(s,10);
+      if(n<0) return null;
+      n = n % 100;
+      return n.toString().padStart(2,'0');
+    }
+
+    function loadFromText(txt){
+      const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+      const map = new Map();
+      for(const line of lines){
+        const parts = line.split(/\s+/);
+        if(parts.length<2) continue;
+        const num = normalizeNum(parts[0]);
+        const label = parts[1].toLowerCase().startsWith('b')? 'b':'s';
+        if(!num) continue;
+        const key = num;
+        if(!map.has(key)) map.set(key,{b:0,s:0});
+        map.get(key)[label]++;
+      }
+      // convert to array
+      const arr = [];
+      for(const [num,counts] of map.entries()){
+        arr.push({num, b:counts.b, s:counts.s});
+      }
+      // sort by num
+      arr.sort((a,b)=>parseInt(a.num)-parseInt(b.num));
+      return arr;
+    }
+
+    function save(){
+      localStorage.setItem('bs_rules_v1', JSON.stringify(rules));
+      renderTable();
+    }
+
+    function load(){
+      const raw = localStorage.getItem('bs_rules_v1');
+      if(raw){
+        try{
+          const parsed = JSON.parse(raw);
+          if(Array.isArray(parsed)) { rules = parsed; return; }
+        }catch(e){}
+      }
+      rules = loadFromText(initialText);
+      save();
+    }
+
+    function renderTable(){
+      const tbody = $('rulesTable').querySelector('tbody');
+      tbody.innerHTML = '';
+      let idx = 0;
+      for(const r of rules){
+        idx++;
+        const tr = document.createElement('tr');
+        const total = (r.b||0)+(r.s||0);
+        tr.innerHTML = `<td>${idx}</td><td>${r.num}</td><td><span class="tag ${majorLabel(r)}">${majorLabel(r).toUpperCase()}</span></td><td>${total}</td><td class="actions"><button data-num="${r.num}" class="editBtn">Edit</button></td>`;
+        tbody.appendChild(tr);
+      }
+      attachEditHandlers();
+    }
+
+    function majorLabel(r){
+      return ((r.b||0) >= (r.s||0)) ? 'b' : 's';
+    }
+
+    function attachEditHandlers(){
+      document.querySelectorAll('.editBtn').forEach(btn=>{
+        btn.onclick = ()=>{
+          const num = btn.dataset.num;
+          const r = rules.find(x=>x.num===num);
+          if(!r) return;
+          $('editNum').value = r.num;
+          $('editLabel').value = majorLabel(r);
+          $('editCount').value = (r.b||0)+(r.s||0);
+          $('saveEditBtn').dataset.orig = r.num;
+          $('deleteBtn').dataset.num = r.num;
+        }
+      });
+    }
+
+    // prediction: exact -> majority; else nearest by absolute difference
+    function predictNumber(raw){
+      const num = normalizeNum(raw);
+      if(!num) return {ok:false,msg:'Enter a valid 0-99 number.'};
+      // exact match
+      const found = rules.find(r=>r.num===num);
+      if(found){
+        const total = (found.b||0)+(found.s||0);
+        const label = majorLabel(found);
+        const count = (label==='b')?found.b:found.s;
+        const conf = (total>0) ? (count/total) : 1;
+        return {ok:true,num,label,conf:conf,used:num,info:`Exact match for ${num} (counts b:${found.b||0} s:${found.s||0})`};
+      }
+      // nearest search: expand distance until find one
+      let best=null;
+      for(let d=1;d<100;d++){
+        const n1 = ( (parseInt(num)+d) % 100).toString().padStart(2,'0');
+        const n2 = ( (parseInt(num)-d + 100) % 100).toString().padStart(2,'0');
+        const f1 = rules.find(r=>r.num===n1);
+        const f2 = rules.find(r=>r.num===n2);
+        if(f1){ best={r:f1,dist:d,which:n1}; break; }
+        if(f2){ best={r:f2,dist:d,which:n2}; break; }
+      }
+      if(best){
+        const r = best.r; const label = majorLabel(r); const total=(r.b||0)+(r.s||0); const count=(label==='b'?r.b:r.s);
+        const conf = total>0? (count/total) : 1;
+        return {ok:true,num,label,conf:conf,used:r.num,info:`Nearest rule used: ${r.num} (counts b:${r.b||0} s:${r.s||0}), distance ${best.dist}`};
+      }
+      return {ok:false,msg:'No rules available to predict.'};
+    }
+
+    // wire UI
+    let rules = [];
+    load();
+
+    $('predictBtn').onclick = ()=>{
+      const val = $('numInput').value;
+      const p = predictNumber(val);
+      if(!p.ok){ $('result').textContent = p.msg; $('explain').textContent=''; return; }
+      $('result').innerHTML = `Prediction: <span class="tag ${p.label}">${p.label.toUpperCase()}</span> &nbsp; <span class="small muted">(confidence ${Math.round(p.conf*100)}%)</span>`;
+      $('explain').textContent = p.info + (p.used && p.used!==p.num? ` — used rule ${p.used}`: '');
+    };
+
+    $('clearBtn').onclick = ()=>{ $('numInput').value=''; $('result').textContent=''; $('explain').textContent=''; };
+
+    $('addBtn').onclick = ()=>{
+      const n = normalizeNum($('addNum').value);
+      if(!n){$('bulkMsg').textContent='Enter a valid number 0-99.';return}
+      const label = $('addLabel').value;
+      let r = rules.find(x=>x.num===n);
+      if(!r){ r = {num:n,b:0,s:0}; rules.push(r); }
+      r[label] = (r[label]||0) + 1;
+      rules.sort((a,b)=>parseInt(a.num)-parseInt(b.num));
+      save();
+      $('bulkMsg').textContent = `Added ${n} ${label}`;
+      setTimeout(()=>{$('bulkMsg').textContent='';},2200);
+    };
+
+    $('importBtn').onclick = ()=>{
+      const txt = $('bulkArea').value.trim();
+      if(!txt){$('bulkMsg').textContent='Paste pairs before importing.';return}
+      const imported = loadFromText(txt);
+      // merge into rules: sum counts
+      const map = new Map(rules.map(r=>[r.num,{...r}]));
+      for(const it of imported){
+        if(!map.has(it.num)) map.set(it.num,{num:it.num,b:0,s:0});
+        const cur = map.get(it.num);
+        cur.b = (cur.b||0) + (it.b||0);
+        cur.s = (cur.s||0) + (it.s||0);
+      }
+      rules = Array.from(map.values()).sort((a,b)=>parseInt(a.num)-parseInt(b.num));
+      save();
+      $('bulkMsg').textContent = 'Import complete';
+      setTimeout(()=>{$('bulkMsg').textContent='';},2200);
+    };
+
+    $('resetBtn').onclick = ()=>{
+      if(!confirm('Reset rules to the original dataset? This will overwrite local edits.')) return;
+      rules = loadFromText(initialText);
+      save();
+      $('bulkMsg').textContent='Reset done';
+      setTimeout(()=>{$('bulkMsg').textContent='';},2000);
+    };
+
+    $('exportBtn').onclick = ()=>{
+      const data = JSON.stringify(rules, null, 2);
+      const w = window.open();
+      w.document.body.textContent = data;
+    };
+
+    $('downloadBtn').onclick = ()=>{
+      const html = '<!doctype html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([html], {type:'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'big-small-predictor.html';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+
+    $('saveEditBtn').onclick = ()=>{
+      const orig = $('saveEditBtn').dataset.orig;
+      if(!orig){ alert('Select a rule to edit from the table'); return; }
+      const n = normalizeNum($('editNum').value);
+      if(!n){ alert('Invalid number'); return; }
+      const label = $('editLabel').value;
+      let count = parseInt($('editCount').value)||1; if(count<1) count=1;
+      // replace or update
+      // remove original
+      rules = rules.filter(r=>r.num!==orig);
+      const newRule = {num:n, b:0, s:0};
+      if(label==='b') newRule.b = count; else newRule.s = count;
+      // merge if existing
+      const existing = rules.find(r=>r.num===n);
+      if(existing){ existing.b = (existing.b||0)+newRule.b; existing.s = (existing.s||0)+newRule.s; }
+      else rules.push(newRule);
+      rules.sort((a,b)=>parseInt(a.num)-parseInt(b.num));
+      save();
+      $('bulkMsg').textContent='Edit saved'; setTimeout(()=>{$('bulkMsg').textContent='';},1600);
+    };
+
+    $('deleteBtn').onclick = ()=>{
+      const num = $('deleteBtn').dataset.num;
+      if(!num) return alert('Select a rule to delete from the table');
+      if(!confirm(`Delete rule ${num}?`)) return;
+      rules = rules.filter(r=>r.num!==num);
+      save();
+      $('bulkMsg').textContent='Deleted'; setTimeout(()=>{$('bulkMsg').textContent='';},1400);
+    };
+
+    // initial render
+    renderTable();
+
+    // allow pressing Enter to predict
+    $('numInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('predictBtn').click(); });
+  </script>
+</body>
+</html>
