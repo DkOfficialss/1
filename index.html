@@ -2,190 +2,80 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>Business Banker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplier Logger PRO</title>
     <style>
-        :root {
-            --bg: #121212;
-            --card: #1e1e1e;
-            --accent: #ff4757;
-            --green: #2ed573;
-            --red: #ff4757;
-        }
-        * { box-sizing: border-box; }
-        body { 
-            font-family: sans-serif; background: var(--bg); color: #fff; 
-            margin: 0; padding: 0; overflow-x: hidden; /* Prevent side scroll */
-        }
-        
-        /* Sticky Header */
-        .header {
-            position: sticky; top: 0; z-index: 100;
-            background: #222; padding: 8px;
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 2px solid var(--accent);
-        }
-
-        /* Setup Screen */
-        #setup { text-align: center; padding: 20px; }
-        input { padding: 12px; width: 90%; border-radius: 8px; border: none; margin-bottom: 10px; font-size: 1rem; }
-        #wheel-container { display: none; margin: 10px auto; position: relative; width: 280px; height: 280px; }
-        #canvas { border-radius: 50%; border: 3px solid var(--accent); width: 100%; height: 100%; }
-        #pointer { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 20px solid white; z-index: 10; }
-
-        /* Game Board */
-        #game { display: none; padding: 5px; }
-        .player-grid { 
-            display: flex; flex-wrap: wrap; gap: 6px; 
-            justify-content: center;
-        }
-        .player-card { 
-            background: var(--card); border-radius: 8px; padding: 8px; 
-            width: calc(50% - 6px); /* 2 cards per row for better visibility */
-            border-top: 3px solid var(--accent);
-            display: flex; flex-direction: column;
-        }
-        
-        .name { font-size: 0.9rem; font-weight: bold; text-align: center; color: var(--accent); }
-        .balance { font-size: 1.4rem; font-weight: bold; text-align: center; color: var(--green); margin: 5px 0; }
-        .balance.neg { color: var(--red); }
-
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-        button { border: none; border-radius: 4px; padding: 10px 0; cursor: pointer; font-size: 0.75rem; font-weight: bold; color: white; }
-        .take { background: #1b5e20; }
-        .give { background: #b71c1c; }
-        .btn-main { background: var(--accent); padding: 12px; width: 100%; margin-top: 10px; border-radius: 8px; font-size: 1rem;}
-        
-        .label { font-size: 0.6rem; text-align: center; opacity: 0.7; margin: 4px 0; text-transform: uppercase; letter-spacing: 1px;}
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f2f5; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; max-width: 500px; margin: auto; }
+        button { padding: 25px 10px; font-size: 1.1rem; font-weight: bold; cursor: pointer; border: none; border-radius: 12px; background: #007bff; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button:active { transform: translateY(2px); box-shadow: none; }
+        .btn-10 { background: #6f42c1; }
+        .btn-high { background: #dc3545; }
+        .controls { margin-top: 40px; border-top: 1px solid #ccc; pt: 20px; }
+        .download-btn { background: #28a745; padding: 15px 30px; margin-top: 20px; }
+        #status { margin-top: 15px; color: #555; font-weight: bold; }
     </style>
 </head>
 <body>
-
-<div id="setup">
-    <h3>Business Banker</h3>
-    <input type="text" id="namesInput" placeholder="Names (Ron, Sam, Jo...)">
-    <button class="btn-main" id="initBtn" onclick="initSetup()">Create Wheel</button>
-    <div id="wheel-container">
-        <div id="pointer"></div>
-        <canvas id="canvas" width="300" height="300"></canvas>
-        <button class="btn-main" id="spinBtn" onclick="spinWheel()">TAP TO SPIN</button>
+    <h2>Multiplier Logger</h2>
+    <div class="grid">
+        <button onclick="logData('<1x')">&lt;1x</button>
+        <button onclick="logData('2x')">2x</button>
+        <button onclick="logData('3x')">3x</button>
+        <button onclick="logData('4x')">4x</button>
+        <button class="btn-10" onclick="logData('10x+')">10x+</button>
+        <button class="btn-high" onclick="logData('10x+++')">10x+++</button>
     </div>
-</div>
 
-<div id="game">
-    <div class="header">
-        <div id="turn-msg" style="font-size: 0.9rem;"></div>
-        <button style="background:none; color:#aaa; font-size:0.7rem; border:1px solid #444; padding:4px 8px;" onclick="resetGame()">RESTART</button>
+    <div class="controls">
+        <button class="download-btn" onclick="downloadJSON()">Download Log File</button>
+        <div id="status">Ready to log...</div>
     </div>
-    <div class="player-grid" id="player-grid"></div>
-</div>
 
-<script>
-    let state = { players: [], firstPlayer: "" };
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    let names = [];
+    <script>
+        let lastTapTime = null;
+        let currentBatchId = Date.now();
 
-    window.onload = () => {
-        const saved = localStorage.getItem('biz_v6');
-        if (saved) { state = JSON.parse(saved); showGame(); }
-    };
+        function logData(multiplier) {
+            const now = new Date();
+            const offsetTime = new Date(now.getTime() - 10000); // 10s back
+            
+            // 12-hour format with AM/PM
+            let hours = offsetTime.getHours();
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; 
+            const timestamp = `${hours.toString().padStart(2, '0')}:${offsetTime.getMinutes().toString().padStart(2, '0')}:${offsetTime.getSeconds().toString().padStart(2, '0')} ${ampm}`;
 
-    function initSetup() {
-        const val = document.getElementById('namesInput').value;
-        if (!val) return;
-        names = val.split(',').map(n => n.trim()).filter(n => n);
-        document.getElementById('initBtn').style.display = 'none';
-        document.getElementById('namesInput').style.display = 'none';
-        document.getElementById('wheel-container').style.display = 'block';
-        drawWheel();
-    }
-
-    function drawWheel() {
-        const slice = (Math.PI * 2) / names.length;
-        names.forEach((name, i) => {
-            ctx.beginPath();
-            ctx.fillStyle = i % 2 === 0 ? '#ff4757' : '#2f3542';
-            ctx.moveTo(150, 150);
-            ctx.arc(150, 150, 150, i * slice, (i + 1) * slice);
-            ctx.fill();
-            ctx.save();
-            ctx.translate(150, 150);
-            ctx.rotate(i * slice + slice / 2);
-            ctx.fillStyle = "white";
-            ctx.font = "bold 16px Arial";
-            ctx.fillText(name.substring(0, 6), 65, 5);
-            ctx.restore();
-        });
-    }
-
-    function spinWheel() {
-        const btn = document.getElementById('spinBtn');
-        btn.disabled = true;
-        const totalRotation = Math.PI * 2 * 10 + Math.random() * Math.PI * 2;
-        const duration = 5000;
-        const start = performance.now();
-
-        function animate(time) {
-            const progress = Math.min((time - start) / duration, 1);
-            const easeOut = 1 - Math.pow(1 - progress, 3);
-            canvas.style.transform = `rotate(${easeOut * totalRotation}rad)`;
-            if (progress < 1) requestAnimationFrame(animate);
-            else {
-                const winningIndex = names.length - 1 - Math.floor((( (easeOut * totalRotation) + Math.PI/2) % (Math.PI * 2)) / ((Math.PI * 2) / names.length));
-                state.players = names.map(n => ({ name: n, balance: 0 }));
-                state.firstPlayer = names[winningIndex < 0 ? 0 : winningIndex];
-                setTimeout(saveAndRender, 800);
+            if (lastTapTime && (now - lastTapTime > 60000)) {
+                currentBatchId = Date.now();
             }
+            lastTapTime = now;
+
+            const entry = {
+                batch: currentBatchId,
+                multiplier: multiplier,
+                time: timestamp,
+                rawTime: offsetTime.getTime(), // Kept for sorting/graphing
+                fullDate: offsetTime.toLocaleDateString()
+            };
+
+            let history = JSON.parse(localStorage.getItem('multiplierLogs')) || [];
+            history.push(entry);
+            localStorage.setItem('multiplierLogs', JSON.stringify(history));
+            
+            document.getElementById('status').innerText = `Logged ${multiplier} at ${timestamp}`;
         }
-        requestAnimationFrame(animate);
-    }
 
-    function updateBal(idx, amt) {
-        state.players[idx].balance += amt;
-        saveAndRender();
-    }
-
-    function saveAndRender() {
-        localStorage.setItem('biz_v6', JSON.stringify(state));
-        showGame();
-    }
-
-    function showGame() {
-        document.getElementById('setup').style.display = 'none';
-        document.getElementById('game').style.display = 'block';
-        document.getElementById('turn-msg').innerText = `🎲 Starts: ${state.firstPlayer}`;
-        const list = document.getElementById('player-grid');
-        
-        list.innerHTML = state.players.map((p, i) => `
-            <div class="player-card">
-                <div class="name">${p.name}</div>
-                <div class="balance ${p.balance < 0 ? 'neg' : ''}">${p.balance}</div>
-                
-                <div class="label">Bank Take (+)</div>
-                <div class="btn-grid">
-                    <button class="take" onclick="updateBal(${i}, 50)">50</button>
-                    <button class="take" onclick="updateBal(${i}, 100)">100</button>
-                    <button class="take" onclick="updateBal(${i}, 500)">500</button>
-                    <button class="take" onclick="updateBal(${i}, 1000)">1k</button>
-                </div>
-                <div class="label">Bank Give (-)</div>
-                <div class="btn-grid">
-                    <button class="give" onclick="updateBal(${i}, -50)">50</button>
-                    <button class="give" onclick="updateBal(${i}, -100)">100</button>
-                    <button class="give" onclick="updateBal(${i}, -500)">500</button>
-                    <button class="give" onclick="updateBal(${i}, -1000)">1k</button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    function resetGame() {
-        if(confirm("Wipe all data and restart?")) {
-            localStorage.removeItem('biz_v6');
-            location.reload();
+        function downloadJSON() {
+            const data = localStorage.getItem('multiplierLogs');
+            if (!data) return alert("No data!");
+            const blob = new Blob([data], { type: "application/json" });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `data_${new Date().getTime()}.json`;
+            a.click();
         }
-    }
-</script>
+    </script>
 </body>
 </html>
